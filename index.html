@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Gestor de Banca</title>
-<meta name="version" content="4.0" />
+<meta name="version" content="6.0" />
 <meta name="theme-color" content="#0a1410" />
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" href="icon-192.png" />
@@ -49,6 +49,16 @@
   .bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
   .pisca { animation: pulse 1.5s ease-in-out infinite; }
+  .esp-header { display: grid; grid-template-columns: 55px 1fr 1fr 1fr; gap:4px; padding: 6px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #6a7d6a; font-weight: 600; border-bottom: 1px solid #1e3228; position: sticky; top: 0; background: #14241c; z-index:1; }
+  .esp-row { display: grid; grid-template-columns: 55px 1fr 1fr 1fr; gap:4px; padding: 5px 8px; font-size: 12px; align-items: center; border-bottom: 1px solid #0f1f17; }
+  .esp-row:hover { background: #1a2e22; }
+  .esp-sem { grid-column:1/-1; padding:6px 8px 2px; font-size:9px; color:#4a5a4a; border-bottom:1px solid #1e3228; margin-top:4px; }
+  .s-table-header { display: grid; grid-template-columns: 50px 1fr 1fr 1fr; gap:4px; padding: 8px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #6a7d6a; font-weight: 600; border-bottom: 1px solid #1e3228; }
+  .s-table-row { display: grid; grid-template-columns: 50px 1fr 1fr 1fr; gap:4px; padding: 8px 8px; font-size: 13px; align-items: center; border-bottom: 1px solid #14241c; cursor: pointer; transition: background 0.15s; border-radius: 4px; }
+  .s-table-row:hover { background: #1a2e22; }
+  .s-table-row:last-child { border-bottom: none; }
+  .s-table-row.passou { opacity: 0.5; }
+  .s-table-row.hoje { border-left: 2px solid #c6a15b; background: #1a2e22; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; } }
 </style>
 </head>
@@ -69,7 +79,7 @@
 const { useState, useEffect, useRef, useMemo } = React;
 
 const D5 = 7, SAQ = 0.3, ENT = 4;
-const DM = {0:"DOM",1:"SEG",2:"TER",3:"QUA",4:"QUI",5:"SEX",6:"SAB"};
+const DM7 = {0:"DOM",1:"SEG",2:"TER",3:"QUA",4:"QUI",5:"SEX",6:"SAB"};
 const MES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
 
 const TIERS = [
@@ -103,7 +113,6 @@ function fd(d) { if(!d) return "—"; return `${String(d.getDate()).padStart(2,"
 function pISO(s) { if(!s) return new Date(); const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
 function tISO(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function kw(w,d) { return `${w}-${d}`; }
-function nd(d) { return DM[d.getDay()]||""; }
 
 function proxUtil(data, offset) {
   const d=new Date(data); let c=0;
@@ -111,34 +120,48 @@ function proxUtil(data, offset) {
   return d;
 }
 
+function offsetHoje(inicio) {
+  const h=new Date(); h.setHours(0,0,0,0);
+  const i=new Date(inicio); i.setHours(0,0,0,0);
+  if(h<i) return -1;
+  let d=0; let c=new Date(i);
+  while(c<h) { c.setDate(c.getDate()+1); d++; }
+  return d;
+}
+
 function calc(cap, inicio, ent, suporMeta) {
   const sem=[]; let atu=cap, atuMeta=cap, off=0;
-  let tierIdxAtual=-1, bancaIniTier=cap, sacadoAcumTier=0;
+  let tierIdxAtual=-1, bancaIniTier=cap, sacadoAcumTier=0, taxaAjustadaAtual=TIERS[0].taxa;
+  const hojeOff = offsetHoje(inicio);
   for(let w=0; w<SEM; w++) {
     const tSemana=tierDia(w*D5); let v=atu, vMeta=atuMeta; const dias=[];
     for(let d=0; d<D5 && off<TOTAL_DIAS; d++) {
       const date=proxUtil(inicio, off);
       const info=tierInfo(off);
       const t=info.tier;
-      if(info.index!==tierIdxAtual) { tierIdxAtual=info.index; bancaIniTier=v; sacadoAcumTier=0; vMeta=v; }
+      if(info.index!==tierIdxAtual) { tierIdxAtual=info.index; bancaIniTier=v; sacadoAcumTier=0; vMeta=v; taxaAjustadaAtual=t.taxa; }
+      const diaOff=off;
       off++;
       const base=v, meta=base*t.taxa;
       const diasRestantesTier=t.dias-info.diaNoTier;
       const alvoFimTier=bancaIniTier*Math.pow(1+t.taxa, t.dias);
-      const shadowBase=base+sacadoAcumTier;
-      let taxaAjustada=t.taxa;
-      if(diasRestantesTier>0 && shadowBase>0) taxaAjustada=Math.pow(alvoFimTier/shadowBase, 1/diasRestantesTier)-1;
+      const taxaAjustada=taxaAjustadaAtual;
       const metaAjustada=vMeta*taxaAjustada;
-      const folgaTier=shadowBase-bancaIniTier*Math.pow(1+t.taxa, info.diaNoTier);
+      const folgaTier=(base+sacadoAcumTier)-bancaIniTier*Math.pow(1+t.taxa, info.diaNoTier);
       const vals=ent[kw(w,d)]||["","","",""];
       const nums=vals.map(e=>e===""||e==null?null:Number(e));
       const tem=nums.some(n=>n!==null&&!isNaN(n));
       const soma=nums.reduce((s,n)=>s+(n!==null&&!isNaN(n)?n:0),0);
-      dias.push({label:nd(date),date,base,meta,metaAjustada,taxaAjustada,folgaTier,vals,tem,soma,taxa:t.taxa});
+      dias.push({label:DM7[date.getDay()],date,base,meta,metaAjustada,taxaAjustada,folgaTier,vals,tem,soma,taxa:t.taxa});
       v = tem ? base + soma : (suporMeta ? base * (1 + t.taxa) : base);
       vMeta = tem ? (base + soma) : vMeta * (1 + taxaAjustada);
+      if(tem || diaOff===hojeOff) {
+        const diasRestProx=diasRestantesTier-1;
+        const shadowBaseProx=v+sacadoAcumTier;
+        taxaAjustadaAtual = (diasRestProx>0 && shadowBaseProx>0) ? Math.pow(alvoFimTier/shadowBaseProx, 1/diasRestProx)-1 : t.taxa;
+      }
     }
-    const lucro = dias.reduce((s,x)=>s+(x.tem?x.soma:0),0);
+    const lucro = v - atu;
     const saq = lucro * SAQ;
     sacadoAcumTier += saq;
     sem.push({semana:w+1,tier:tSemana,inicial:atu,dias,lucro,saque:saq,fim:v,prox:v-saq});
@@ -146,6 +169,37 @@ function calc(cap, inicio, ent, suporMeta) {
     atuMeta = vMeta - saq;
   }
   return sem;
+}
+
+function inteligente(semanas) {
+  let saldoGlobal = 0;
+  return semanas.map(sem => {
+    const dias = sem.dias.map(d => {
+      const metaBase = d.meta;
+      const metaEfetiva = saldoGlobal > 0 ? Math.max(0, metaBase - saldoGlobal)
+        : saldoGlobal < 0 ? metaBase + Math.abs(saldoGlobal)
+        : metaBase;
+      let status, cor;
+      if (!d.tem) {
+        if (saldoGlobal > 0) { status = "coberto"; cor = "#3b82f6"; }
+        else if (saldoGlobal < 0) { status = "pendente"; cor = "#f59e0b"; }
+        else { status = "sem_op"; cor = "#4a5a4a"; }
+      } else if (d.soma < 0) {
+        status = "negativo"; cor = "#ef4444";
+      } else if (d.soma === 0) {
+        status = saldoGlobal < 0 ? "pendente" : "sem_op"; cor = saldoGlobal < 0 ? "#f59e0b" : "#4a5a4a";
+      } else if (d.soma >= metaBase) {
+        status = "atingiu"; cor = "#22c55e";
+      } else if (d.soma >= metaEfetiva && metaEfetiva < metaBase) {
+        status = "coberto"; cor = "#3b82f6";
+      } else {
+        status = "parcial"; cor = "#f59e0b";
+      }
+      saldoGlobal += d.soma - metaBase;
+      return { ...d, metaEfetiva, status, cor, saldo: saldoGlobal };
+    });
+    return { ...sem, dias };
+  });
 }
 
 const auth = firebase.auth();
@@ -252,6 +306,14 @@ function App() {
   const [focoDia, setFocoDia] = useState(null);
   const [selDia, setSelDia] = useState(null);
   const [selMes, setSelMes] = useState(0);
+  const [showConfig, setShowConfig] = useState(false);
+  const [fechados, setFechados] = useState({});
+  const [senhaAdmin, setSenhaAdmin] = useState("");
+  const [historico, setHistorico] = useState([]);
+  const [showModalSenha, setShowModalSenha] = useState(false);
+  const [senhaAcao, setSenhaAcao] = useState(null);
+  const [inpSenha, setInpSenha] = useState("");
+  const [senhaErro, setSenhaErro] = useState("");
   const timer = useRef(null);
   const ref = useRef(null);
 
@@ -263,6 +325,12 @@ function App() {
       if(d) { const p=pISO(JSON.parse(d)); if(!isNaN(p.getTime())) setDataIni(p); }
       const e=localStorage.getItem("bc:ent");
       if(e) { const p=JSON.parse(e); if(typeof p==="object"&&!Array.isArray(p)) setEnt(p); }
+      const f=localStorage.getItem("bc:fech");
+      if(f) { const p=JSON.parse(f); if(typeof p==="object"&&!Array.isArray(p)) setFechados(p); }
+      const s=localStorage.getItem("bc:senha");
+      if(s) setSenhaAdmin(s);
+      const h=localStorage.getItem("bc:hist");
+      if(h) { const p=JSON.parse(h); if(Array.isArray(p)) setHistorico(p); }
     } catch(e) { console.warn(e); }
     setCarreg(true);
   }, []);
@@ -275,15 +343,18 @@ function App() {
         localStorage.setItem("bc:cap",JSON.stringify(cap));
         localStorage.setItem("bc:ini",JSON.stringify(tISO(dataIni)));
         localStorage.setItem("bc:ent",JSON.stringify(ent));
+        localStorage.setItem("bc:fech",JSON.stringify(fechados));
+        localStorage.setItem("bc:senha",senhaAdmin);
+        localStorage.setItem("bc:hist",JSON.stringify(historico));
         setSalvo(true); setTimeout(()=>setSalvo(false),2000);
       } catch(e) { console.warn(e); }
       if(user && firePronto) {
-        db.collection("dados").doc(user.uid).set({cap, ini: tISO(dataIni), ent}, {merge:true})
+        db.collection("dados").doc(user.uid).set({cap, ini: tISO(dataIni), ent, fechados, senha:senhaAdmin, historico}, {merge:true})
           .then(()=>setSyncErro(false))
           .catch(()=>setSyncErro(true));
       }
     },300);
-  },[cap,dataIni,ent,carreg,user,firePronto]);
+  },[cap,dataIni,ent,fechados,senhaAdmin,historico,carreg,user,firePronto]);
 
   useEffect(() => { if(editDia!==null&&ref.current) ref.current.focus(); }, [editDia]);
 
@@ -305,6 +376,9 @@ function App() {
       if(d.cap) setInpCap(String(d.cap));
       if(d.ini) { const p=pISO(d.ini); if(!isNaN(p.getTime())) setDataIni(p); }
       if(d.ent&&typeof d.ent==="object") setEnt(d.ent);
+      if(d.fechados&&typeof d.fechados==="object") setFechados(d.fechados);
+      if(typeof d.senha==="string") setSenhaAdmin(d.senha);
+      if(Array.isArray(d.historico)) setHistorico(d.historico);
       setFirePronto(true);
     }, () => {});
     return unsub;
@@ -312,11 +386,39 @@ function App() {
 
   const semanas=useMemo(()=>calc(cap,dataIni,ent,false),[cap,dataIni,ent]);
   const semanasProj=useMemo(()=>calc(cap,dataIni,{},true),[cap,dataIni]);
+  const semanasReal=useMemo(()=>calc(cap,dataIni,ent,true),[cap,dataIni,ent]);
+  const semanasInt=useMemo(()=>inteligente(semanas),[semanas]);
+  const semanasProjInt=useMemo(()=>inteligente(semanasProj),[semanasProj]);
   const hj=useMemo(()=>semHoje(dataIni),[dataIni]);
+
+  const dashData = useMemo(() => {
+    let totalLucro=0, totalSaque=0, diasOperados=0, diasComLucro=0;
+    let melhorDia={soma:0, data:null}, piorDia={soma:0, data:null};
+    let seqAtual=0, maxSeq=0;
+    for(const sem of semanas) {
+      for(const d of sem.dias) {
+        if(d.tem && d.soma!==0) {
+          diasOperados++;
+          totalLucro += d.soma;
+          if(d.soma>0) diasComLucro++;
+          if(d.soma>melhorDia.soma) melhorDia={soma:d.soma,data:d.date};
+          if(d.soma<piorDia.soma) piorDia={soma:d.soma,data:d.date};
+        }
+        if(d.tem && d.soma>0) { seqAtual++; if(seqAtual>maxSeq) maxSeq=seqAtual; }
+        else if(d.tem) { seqAtual=0; }
+      }
+    }
+    for(const sem of semanas) totalSaque += sem.saque;
+    const bancaFinal = semanas.length>0 ? semanas[semanas.length-1].prox : cap;
+    const bancaProj = semanasProj.length>0 ? semanasProj[semanasProj.length-1].prox : cap;
+    const winRate = diasOperados>0 ? Math.round(diasComLucro/diasOperados*100) : 0;
+    return { totalLucro, totalSaque, diasOperados, winRate, melhorDia, piorDia, seqAtual:maxSeq, bancaFinal, bancaProj, diff:bancaFinal-bancaProj };
+  }, [semanas, semanasProj, cap]);
 
   const semIdx = semAtual !== null ? semAtual : (hj ? hj.semana : 0);
   const sm = semIdx >= 0 && semIdx < semanas.length ? semanas[semIdx] : null;
   const smProj = semIdx >= 0 && semIdx < semanasProj.length ? semanasProj[semIdx] : null;
+  const smInt = semIdx >= 0 && semIdx < semanasInt.length ? semanasInt[semIdx] : null;
 
   const bancaIni = sm ? sm.inicial : cap;
   const bancaAtu = sm ? sm.prox : cap;
@@ -325,12 +427,54 @@ function App() {
   const lucro = sm ? sm.lucro : 0;
   const saque = sm ? sm.saque : 0;
 
+  function diaFechado(sem, dia) { return !!fechados[kw(sem, dia)]; }
+
+  function fecharDia(sem, dia) {
+    const k=kw(sem,dia);
+    setFechados(p=>({...p,[k]:Date.now()}));
+    setHistorico(p=>[...p,{tipo:"fechar",k,data:Date.now()}]);
+  }
+
+  function desfecharDia(sem, dia) {
+    const k=kw(sem,dia);
+    setFechados(p=>{const n={...p}; delete n[k]; return n;});
+    setHistorico(p=>[...p,{tipo:"desfechar",k,data:Date.now()}]);
+  }
+
+  function pedirSenha(acao) {
+    if(!senhaAdmin) { acao(); return; }
+    setSenhaAcao(()=>acao);
+    setShowModalSenha(true);
+    setInpSenha("");
+    setSenhaErro("");
+  }
+
+  function confirmarSenha() {
+    if(inpSenha===senhaAdmin) {
+      setShowModalSenha(false);
+      if(senhaAcao) senhaAcao();
+      setSenhaAcao(null);
+    } else {
+      setSenhaErro("Senha incorreta.");
+    }
+  }
+
   function abrirDia(sem, dia) {
+    if(diaFechado(sem,dia)) {
+      pedirSenha(()=>abrirDia(sem,dia));
+      return;
+    }
     const k=kw(sem,dia);
     const v=ent[k]||["","","",""];
-    const vz=v.findIndex(x=>x===""||x==null);
-    if(vz>=0) { setEditDia({semana:sem,dia:dia,slot:vz}); setEditVal(""); }
-    else { setEditDia({semana:sem,dia:dia,slot:null}); setEditVal(v[0]||""); }
+    const vals=v.filter(x=>x!==""&&x!=null);
+    if(vals.length>0) {
+      setEditDia({semana:sem,dia:dia,slot:0});
+      setEditVal(vals[0]);
+    } else {
+      const vz=v.findIndex(x=>x===""||x==null);
+      setEditDia({semana:sem,dia:dia,slot:vz>=0?vz:0});
+      setEditVal("");
+    }
   }
 
   function conf() {
@@ -339,19 +483,26 @@ function App() {
     const k=kw(semana,dia);
     const v=editVal.replace(",",".");
     const n=Number(v);
-    if(v===""||isNaN(n)||n<=0) { setEditDia(null); return; }
-    setEnt(p=>{ const c=p[k]?p[k].slice():["","","",""]; if(slot!==null) c[slot]=v; else { const vz=c.findIndex(x=>x===""||x==null); c[vz>=0?vz:0]=v; } return {...p,[k]:c}; });
-    setEditDia(null);
+    if(v===""||isNaN(n)) { setEditDia(null); return; }
+    setEnt(p=>{ const c=p[k]?p[k].slice():["","","",""]; c[slot]=v; return {...p,[k]:c}; });
+    setHistorico(p=>[...p,{tipo:"entrada",k,slot,val:v,data:Date.now()}]);
+    const proxVazio=ent[k]?ent[k].findIndex((x,i)=>i!==slot&&(x===""||x==null)):1;
+    if(proxVazio>=0) { setEditDia({semana,dia,slot:proxVazio}); setEditVal(""); }
+    else setEditDia(null);
   }
 
   function naoOperei(sem, dia) {
+    if(diaFechado(sem,dia)) { pedirSenha(()=>naoOperei(sem,dia)); return; }
     const k=kw(sem,dia);
     setEnt(p=>({...p,[k]:["0","0","0","0"]}));
+    setHistorico(p=>[...p,{tipo:"naoOperei",k,data:Date.now()}]);
   }
 
   function desfazer(sem, dia) {
+    if(diaFechado(sem,dia)) { pedirSenha(()=>desfazer(sem,dia)); return; }
     const k=kw(sem,dia);
     setEnt(p=>{const n={...p}; delete n[k]; return n;});
+    setHistorico(p=>[...p,{tipo:"limpar",k,data:Date.now()}]);
   }
 
   function proximoDia() {
@@ -366,18 +517,6 @@ function App() {
 
   const diaAtual = focoDia || hj;
 
-  function stts(d, i) {
-    if(!d.tem) {
-      if(hj && semIdx===hj.semana && i<hj.dia) return {emoji:"⚠️",cor:"#8a5a4a",label:"Perdido",cls:"perdido"};
-      if(hj && semIdx===hj.semana && i===hj.dia) return {emoji:"⏳",cor:"#6a7d6a",label:"Hoje",cls:""};
-      return {emoji:"⏳",cor:"#4a5a4a",label:"Pendente",cls:""};
-    }
-    if(d.soma<=0) return {emoji:"🔴",cor:"#A6432D",label:"Inativo",cls:"perdido"};
-    if(d.soma>=d.metaAjustada) return {emoji:"✅",cor:"#4C8C5C",label:"OK",cls:"ok"};
-    const pct = d.metaAjustada>0 ? Math.round(d.soma/d.metaAjustada*100) : 0;
-    return {emoji:"🟡",cor:"#c6a15b",label:`${pct}%`,cls:"parcial"};
-  }
-
   if(authLoad) return <div className="bg-app" style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}><span className="font-mono text-xs text-[#6a7d6a]">Carregando...</span></div>;
   if(!user) return <Login />;
   return (
@@ -391,11 +530,12 @@ function App() {
           {!online && <span className="font-mono text-[9px] text-[#8a5a4a]" title="Sem internet: dados salvos só neste aparelho">📴 offline</span>}
           {online && syncErro && <span className="font-mono text-[9px] text-[#A6432D]" title="Não foi possível sincronizar com a nuvem">⚠️ sem sync</span>}
           <span className={`font-mono text-[10px] text-[#c6a15b] transition-opacity duration-300 ${salvo?"opacity-100":"opacity-0"}`}>salvo</span>
+          <button onClick={()=>setShowConfig(p=>!p)} className="text-[10px] text-[#6a7d6a] hover:text-[#c6a15b]" style={{background:"none",border:"none",cursor:"pointer"}} title="Configurar">⚙️</button>
           <button onClick={()=>auth.signOut()} className="text-[9px] text-[#6a7d6a] hover:text-[#c6a15b]" style={{background:"none",border:"none",cursor:"pointer"}}>sair</button>
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4">
+      {showConfig && <div className="flex gap-2 mb-4">
         <div className="flex-1 card-soft">
           <label className="text-[9px] uppercase tracking-wider text-[#6a7d6a] font-semibold">Capital</label>
           <div className="flex items-center gap-0.5 mt-0.5">
@@ -411,7 +551,7 @@ function App() {
             onChange={e=>{if(e.target.value) setDataIni(pISO(e.target.value)); setSemAtual(null);}}
             className="font-mono text-sm text-[#e8e0cc] bg-transparent border-b border-[#c6a15b] focus:outline-none w-full mt-0.5" />
         </div>
-      </div>
+      </div>}
 
       {(!sm) ? (
         <div className="card text-center font-mono text-xs text-[#6a7d6a] py-8">
@@ -420,10 +560,10 @@ function App() {
       ) : (
         <>
           <div className="flex mb-4 bg-[#0f1f17] rounded-lg p-1">
-            {["dia","semana","mes"].map(m => (
+            {["dia","semana","mes","espelho","painel"].map(m => (
               <button key={m} onClick={()=>setModo(m)} className="flex-1 py-2 text-center font-mono text-xs rounded-md transition-all"
                 style={{background:modo===m?"#c6a15b":"transparent", color:modo===m?"#0a1410":"#6a7d6a", fontWeight:modo===m?700:500, border:"none"}}>
-                {m==="dia"?"Dia":m==="semana"?"Semana":"Mês"}
+                {m==="dia"?"Dia":m==="semana"?"Semana":m==="mes"?"Mês":m==="espelho"?"Espelho":"Painel"}
               </button>
             ))}
           </div>
@@ -431,88 +571,129 @@ function App() {
           {modo==="dia" && (()=>{
             const dIdx = selDia!==null ? selDia : (hj ? hj.dia : 0);
             const hd = sm.dias[dIdx];
-            const exc = hd.tem ? hd.soma - hd.metaAjustada : 0;
+            const hdInt = smInt?.dias[dIdx];
+            const projDia = smProj?.dias[dIdx];
+            const bancaModelo = projDia ? projDia.base : cap;
             const hojeFlag = hj && semIdx===hj.semana && dIdx===hj.dia;
-            const dif = hd.metaAjustada - hd.meta;
+            const metaMod = projDia ? projDia.meta : 0;
+            const metaEf = hdInt ? hdInt.metaEfetiva : metaMod;
+            const st = hdInt ? hdInt.status : "sem_op";
+            const corSt = hdInt ? hdInt.cor : "#4a5a4a";
+            const pctMeta = metaEf>0 && hd.tem ? Math.min(100, Math.max(0, hd.soma/metaEf*100)) : 0;
+            const pctBanca = bancaModelo>0 ? Math.min(100, hd.base/bancaModelo*100) : 0;
+            const fechou = diaFechado(semIdx, dIdx);
             return (
               <>
                 <div className="flex items-center gap-1 mb-3">
                   <button onClick={()=>setSelDia(Math.max(0,dIdx-1))} className="btn-small" disabled={dIdx<=0}>◀</button>
-                  {sm.dias.map((d,i)=>(
-                    <button key={i} onClick={()=>setSelDia(i)} className="flex-1 py-2.5 text-center font-mono rounded-md transition-all"
-                      style={{background:i===dIdx?"#c6a15b":"#14241c",color:i===dIdx?"#0a1410":"#6a7d6a",border:"none",fontWeight:i===dIdx?700:500}}>
+                  {smInt.dias.map((d,i)=>(
+                    <button key={i} onClick={()=>setSelDia(i)} className="flex-1 py-2.5 text-center font-mono rounded-md transition-all relative"
+                      style={{background:i===dIdx?"#c6a15b":"#14241c",color:i===dIdx?"#0a1410":"#6a7d6a",border:`1px solid ${i!==dIdx?d.cor:"#c6a15b"}`,fontWeight:i===dIdx?700:500}}>
                       <div className="text-[13px] leading-tight">{d.label}</div>
                       <div className="text-[10px] leading-tight opacity-80">{fd(d.date)}</div>
+                      <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full" style={{background:d.cor}}></div>
                     </button>
                   ))}
                   <button onClick={()=>setSelDia(Math.min(D5-1,dIdx+1))} className="btn-small" disabled={dIdx>=D5-1}>▶</button>
                 </div>
 
-                <div className="card mb-3" style={{background:"#1a2e22",borderColor:"#c6a15b"}}>
+                <div className="card mb-3" style={{background:"#1a2e22",borderColor:corSt}}>
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-3 mb-1">
-                      <span className="text-[10px] text-[#6a7d6a] font-mono uppercase tracking-wider">🎯 {hojeFlag?"Hoje":fd(hd.date)}</span>
-                      {hd.tem && hd.soma<hd.metaAjustada && <span className="pisca text-[10px] text-[#c6a15b] font-mono">Abaixo da meta!</span>}
-                      {!hd.tem && <span className="text-[10px] text-[#8a5a4a] font-mono">Pendente</span>}
-                      {hd.tem && hd.soma>=hd.metaAjustada && <span className="text-[10px] text-[#4C8C5C] font-mono">✅ OK</span>}
-                      {hd.tem && hd.soma<=0 && <span className="text-[10px] text-[#A6432D] font-mono">🔴 Inativo</span>}
+                      <span className="text-[10px] font-mono uppercase tracking-wider" style={{color:corSt}}>
+                        {st==="atingiu"?"✅ Atingiu":st==="coberto"?"🔵 Coberto":st==="negativo"?"🔴 Negativo":st==="parcial"?"🟡 Parcial":st==="pendente"?"⏳ Pendente":"🎯"}
+                        {" "}{hojeFlag?"Hoje":fd(hd.date)}
+                      </span>
+                      {fechou && <span className="text-[9px] text-[#f59e0b] font-mono">🔒</span>}
                     </div>
-                    <div className="font-mono text-3xl font-bold text-[#c6a15b] mt-1">{fmt(hd.metaAjustada)}</div>
-                    <div className="font-mono text-[11px] text-[#6a7d6a] mt-0.5">{hd.label} · Base: {fmt(hd.base)}</div>
-                    {Math.abs(dif)>=0.01 && (
-                      <div className="font-mono text-[9px] text-[#6a7d6a] mt-1">
-                        Meta base do mês: {fmt(hd.meta)} · {dif<0?`você tá à frente, meta reduzida em ${fmt(Math.abs(dif))}`:`você tá atrasado, meta aumentada em ${fmt(dif)}`}
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div>
+                        <div className="text-[9px] text-[#6a7d6a] font-mono uppercase">Banca</div>
+                        <div className="font-mono text-lg font-bold text-[#e8e0cc]">{fmt(bancaModelo)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] text-[#6a7d6a] font-mono uppercase">Meta Efec.</div>
+                        <div className="font-mono text-lg font-bold" style={{color:metaEf<metaMod?"#3b82f6":"#c6a15b"}}>{fmt(metaEf)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] text-[#6a7d6a] font-mono uppercase">Resultado</div>
+                        <div className="font-mono text-lg font-bold" style={{color:corSt}}>{hd.tem?(hd.soma===0?"—":fmt(hd.soma)):"—"}</div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-1">
+                      <div>
+                        <div className="text-[8px] text-[#4a5a4a] font-mono">Meta Mod.</div>
+                        <div className="font-mono text-[10px] text-[#6a7d6a]">{fmt(metaMod)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[8px] text-[#4a5a4a] font-mono">Saldo</div>
+                        <div className={`font-mono text-[10px] ${(hdInt?.saldo||0)>=0?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{hdInt?fmt(hdInt.saldo):"—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[8px] text-[#4a5a4a] font-mono">Taxa</div>
+                        <div className="font-mono text-[10px] text-[#6a7d6a]">{Math.round(hd.taxa*100)}%</div>
+                      </div>
+                    </div>
+                    <div className="flex justify-between font-mono text-[10px] px-2 mt-2">
+                      <span className="text-[#6a7d6a]">Banca real</span>
+                      <span className={hd.base>=bancaModelo?"text-[#4C8C5C]":"text-[#e8e0cc]"}>{fmt(hd.base)}</span>
+                    </div>
+                    {hd.tem && (
+                      <div className="flex justify-between font-mono text-[12px] px-2 border-t border-[#1e3228] pt-1 mt-1">
+                        <span className="text-[#6a7d6a]">💰 Resultado</span>
+                        <span style={{color:corSt}}>{hd.soma>=0?"+":""}{fmt(hd.soma)}</span>
                       </div>
                     )}
-                    {hd.tem ? (
-                      <>
-                        <div className="mt-2 bar-container">
-                          <div className="bar-fill" style={{width:`${Math.min(100,hd.soma/hd.metaAjustada*100)}%`, background:hd.soma>=hd.metaAjustada?"#4C8C5C":"#c6a15b"}}></div>
-                        </div>
-                        <div className="flex justify-between font-mono text-[12px] px-2 mt-2">
-                          <span className="text-[#6a7d6a]">Realizado</span>
-                          <span className={hd.soma>=hd.metaAjustada?"text-[#4C8C5C]":"text-[#e8e0cc]"}>{fmt(hd.soma)}</span>
-                        </div>
-                        <div className="flex justify-between font-mono text-[12px] px-2">
-                          <span className="text-[#6a7d6a]">Excedente</span>
-                          <span className={exc>=0?"text-[#4C8C5C]":"text-[#A6432D]"}>{exc>=0?"+":""}{fmt(exc)}</span>
-                        </div>
-                        <button onClick={()=>{if(dIdx<D5-1)setSelDia(dIdx+1);}} className="btn-secondary mt-3 text-xs py-2 w-full">
-                          {dIdx>=D5-1?"Semana completa":"Próximo dia →"}
-                        </button>
-                      </>
-                    ) : editDia && editDia.semana===semIdx && editDia.dia===dIdx ? (
+                    {hd.tem && <div className="flex gap-2 mt-1">
+                      <button onClick={()=>{desfazer(semIdx,dIdx);}} className="btn-danger text-xs py-0.5 px-2" style={{fontSize:10}}>🗑️ Limpar</button>
+                      <button onClick={()=>{abrirDia(semIdx,dIdx);}} className="btn-secondary text-xs py-0.5 flex-1" style={{fontSize:10}}>✏️ Editar</button>
+                    </div>}
+                    {editDia && editDia.semana===semIdx && editDia.dia===dIdx ? (
                       <div className="flex items-center gap-2 mt-3 justify-center">
                         <span className="font-mono text-xs text-[#6a7d6a]">R$</span>
                         <input ref={ref} type="text" inputMode="decimal" value={editVal}
                           onChange={e=>setEditVal(e.target.value)}
                           onKeyDown={e=>{if(e.key==="Enter")conf();if(e.key==="Escape")setEditDia(null);}}
                           className="cell-input text-center text-lg" placeholder="0,00" autoFocus />
-                        <button onClick={()=>conf()} className="btn-secondary text-xs py-1 px-2">OK</button>
+                        <button onClick={()=>conf()} className="btn-secondary text-xs py-1 px-2" title="Adicionar">OK</button>
+                        <button onClick={()=>setEditDia(null)} className="btn-secondary text-xs py-1 px-2" title="Fechar">Pronto</button>
+                      </div>
+                    ) : !hd.tem ? (
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={()=>{abrirDia(semIdx,dIdx);}} className="btn-primary text-xs py-2">+ Inserir</button>
+                        <button onClick={()=>{naoOperei(semIdx,dIdx);}} className="btn-danger text-xs py-2" style={{flex:0.6}}>🚫 Não operei</button>
                       </div>
                     ) : (
-                      <div className="flex gap-2 mt-3">
-                        <button onClick={e=>{e.stopPropagation();abrirDia(semIdx,dIdx);}} className="btn-primary text-xs py-2">+ Inserir</button>
-                        <button onClick={e=>{e.stopPropagation();naoOperei(semIdx,dIdx);}} className="btn-danger text-xs py-2" style={{flex:0.6}}>🚫 Não operei</button>
-                      </div>
+                      <button onClick={()=>{if(dIdx<D5-1)setSelDia(dIdx+1);}} className="btn-secondary mt-3 text-xs py-2 w-full">
+                        {dIdx>=D5-1?"Semana completa":"Próximo dia →"}
+                      </button>
                     )}
                   </div>
                 </div>
 
-                <div className="card-soft flex justify-between items-center">
+                <div className="card-soft flex justify-between items-center mb-2">
                   <div className="text-center flex-1">
-                    <div className="text-[8px] text-[#6a7d6a] font-mono uppercase">Banca</div>
-                    <div className="font-mono text-sm font-bold">{fmt(bancaAtu)}</div>
+                    <div className="text-[8px] text-[#6a7d6a] font-mono uppercase">Banca real</div>
+                    <div className="font-mono text-sm font-bold">{fmt(hd.base)}</div>
                   </div>
                   <div className="text-center flex-1">
-                    <div className="text-[8px] text-[#6a7d6a] font-mono uppercase">Lucro sem.</div>
-                    <div className={`font-mono text-sm font-bold ${lucro>=0?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{lucro>=0?"+":""}{fmt(lucro)}</div>
+                    <div className="text-[8px] text-[#6a7d6a] font-mono uppercase">Banca mod.</div>
+                    <div className="font-mono text-sm text-[#6a7d6a]">{fmt(bancaModelo)}</div>
                   </div>
                   <div className="text-center flex-1">
-                    <div className="text-[8px] text-[#6a7d6a] font-mono uppercase">Saque</div>
-                    <div className="font-mono text-sm text-[#c6a15b]">{fmt(saque)}</div>
+                    <div className="text-[8px] text-[#6a7d6a] font-mono uppercase">Diferença</div>
+                    <div className={`font-mono text-sm font-bold ${hd.base>=bancaModelo?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{hd.base>=bancaModelo?"+":""}{fmt(hd.base-bancaModelo)}</div>
                   </div>
                 </div>
+                {hd.tem && (
+                  <div className="flex justify-end">
+                    {fechou ? (
+                      <button onClick={()=>desfecharDia(semIdx,dIdx)} className="btn-small text-[9px]">🔓 Reabrir dia</button>
+                    ) : (
+                      <button onClick={()=>fecharDia(semIdx,dIdx)} className="btn-small text-[9px]">🔒 Fechar dia</button>
+                    )}
+                  </div>
+                )}
               </>
             );
           })()}
@@ -536,52 +717,69 @@ function App() {
 
               {diaAtual && semIdx===diaAtual.semana && (()=>{
                 const hd = sm.dias[diaAtual.dia];
-                const exc = hd.tem ? hd.soma - hd.metaAjustada : 0;
-                const proxBase = hd.tem ? hd.base + hd.soma : hd.base;
-                const proxMeta = proxBase * hd.taxa;
-                const dif = hd.metaAjustada - hd.meta;
+                const hdInt = smInt?.dias[diaAtual.dia];
+                const projDia = smProj?.dias[diaAtual.dia];
+                const bancaModelo = projDia ? projDia.base : cap;
+                const metaMod = projDia ? projDia.meta : 0;
+                const metaEf = hdInt ? hdInt.metaEfetiva : metaMod;
+                const st = hdInt ? hdInt.status : "sem_op";
+                const corSt = hdInt ? hdInt.cor : "#4a5a4a";
+                const fechou = diaFechado(semIdx, diaAtual.dia);
                 return (
-                <div className="card mb-3" style={{background:"#1a2e22",borderColor:"#c6a15b"}}>
+                <div className="card mb-3" style={{background:"#1a2e22",borderColor:corSt}}>
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-3 mb-1">
-                      <span className="text-[10px] text-[#6a7d6a] font-mono uppercase tracking-wider">🎯 {focoDia?"Foco":"Hoje"}</span>
-                      {hd.tem && hd.soma<hd.metaAjustada && <span className="pisca text-[10px] text-[#c6a15b] font-mono">Abaixo!</span>}
-                      {!hd.tem && <span className="text-[10px] text-[#8a5a4a] font-mono">Pendente</span>}
-                      {hd.tem && hd.soma>=hd.metaAjustada && <span className="text-[10px] text-[#4C8C5C] font-mono">✅ OK</span>}
+                      <span className="text-[10px] font-mono uppercase tracking-wider" style={{color:corSt}}>
+                        {st==="atingiu"?"✅ Atingiu":st==="coberto"?"🔵 Coberto":st==="negativo"?"🔴 Negativo":st==="parcial"?"🟡 Parcial":st==="pendente"?"⏳ Pendente":"🎯"}
+                        {" "}{focoDia?"Foco":"Hoje"}
+                      </span>
+                      {fechou && <span className="text-[9px] text-[#f59e0b] font-mono">🔒</span>}
                     </div>
-                    <div className="font-mono text-3xl font-bold text-[#c6a15b] mt-1">{fmt(hd.metaAjustada)}</div>
-                    <div className="font-mono text-[10px] text-[#6a7d6a] mt-0.5">{hd.label} · {fd(hd.date)} · Base: {fmt(hd.base)}</div>
-                    {Math.abs(dif)>=0.01 && (
-                      <div className="font-mono text-[9px] text-[#6a7d6a] mt-1">
-                        Meta base do mês: {fmt(hd.meta)} · {dif<0?`à frente, reduzida em ${fmt(Math.abs(dif))}`:`atrasado, aumentada em ${fmt(dif)}`}
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div>
+                        <div className="text-[9px] text-[#6a7d6a] font-mono uppercase">Banca</div>
+                        <div className="font-mono text-lg font-bold text-[#e8e0cc]">{fmt(bancaModelo)}</div>
                       </div>
-                    )}
-                    {hd.tem ? (
-                      <>
-                        <div className="mt-2 bar-container">
-                          <div className="bar-fill" style={{width:`${Math.min(100,hd.soma/hd.metaAjustada*100)}%`, background:hd.soma>=hd.metaAjustada?"#4C8C5C":"#c6a15b"}}></div>
-                        </div>
-                        <div className="flex justify-between font-mono text-[12px] px-2 mt-2">
-                          <span className="text-[#6a7d6a]">Realizado</span><span className={hd.soma>=hd.metaAjustada?"text-[#4C8C5C]":"text-[#e8e0cc]"}>{fmt(hd.soma)}</span>
-                        </div>
-                        <div className="flex justify-between font-mono text-[12px] px-2">
-                          <span className="text-[#6a7d6a]">Excedente</span><span className={exc>=0?"text-[#4C8C5C]":"text-[#A6432D]"}>{exc>=0?"+":""}{fmt(exc)}</span>
-                        </div>
-                        <div className="flex justify-between font-mono text-[12px] px-2 border-t border-[#1e3228] pt-1 mt-1">
-                          <span className="text-[#c6a15b]">Nova base</span><span className="text-[#c6a15b]">{fmt(proxBase)}</span>
-                        </div>
-                        <div className="flex justify-between font-mono text-[12px] px-2">
-                          <span className="text-[#c6a15b]">Próx. meta</span><span className="text-[#c6a15b]">{fmt(proxMeta)}</span>
-                        </div>
-                        <button onClick={e=>{e.stopPropagation();proximoDia();}} className="btn-secondary mt-3 text-xs py-2 w-full">
-                          {diaAtual.dia>=D5-1?"Próxima semana →":"Próximo dia →"}
-                        </button>
-                      </>
-                    ) : (
+                      <div>
+                        <div className="text-[9px] text-[#6a7d6a] font-mono uppercase">Meta Efec.</div>
+                        <div className="font-mono text-lg font-bold" style={{color:metaEf<metaMod?"#3b82f6":"#c6a15b"}}>{fmt(metaEf)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] text-[#6a7d6a] font-mono uppercase">Resultado</div>
+                        <div className="font-mono text-lg font-bold" style={{color:corSt}}>{hd.tem?(hd.soma===0?"—":fmt(hd.soma)):"—"}</div>
+                      </div>
+                    </div>
+                    <div className="flex justify-between font-mono text-[10px] px-2 mt-1">
+                      <span className="text-[#6a7d6a]">Banca real</span>
+                      <span className={hd.base>=bancaModelo?"text-[#4C8C5C]":"text-[#e8e0cc]"}>{fmt(hd.base)}</span>
+                    </div>
+                    {hdInt && <div className="flex justify-between font-mono text-[9px] px-2 mt-0.5">
+                      <span className="text-[#4a5a4a]">Saldo acumulado</span>
+                      <span className={hdInt.saldo>=0?"text-[#4C8C5C]":"text-[#A6432D]"}>{fmt(hdInt.saldo)}</span>
+                    </div>}
+                    {hd.tem && <div className="flex gap-2 mt-1">
+                      <button onClick={e=>{e.stopPropagation();desfazer(semIdx,diaAtual.dia);}} className="btn-danger text-xs py-0.5 px-2" style={{fontSize:10}}>🗑️ Limpar</button>
+                      <button onClick={e=>{e.stopPropagation();abrirDia(semIdx,diaAtual.dia);}} className="btn-secondary text-xs py-0.5 flex-1" style={{fontSize:10}}>✏️ Editar</button>
+                    </div>}
+                    {editDia && editDia.semana===semIdx && editDia.dia===diaAtual.dia ? (
+                      <div className="flex items-center gap-2 mt-3 justify-center">
+                        <span className="font-mono text-xs text-[#6a7d6a]">R$</span>
+                        <input ref={ref} type="text" inputMode="decimal" value={editVal}
+                          onChange={e=>setEditVal(e.target.value)}
+                          onKeyDown={e=>{if(e.key==="Enter")conf();if(e.key==="Escape")setEditDia(null);}}
+                          className="cell-input text-center text-lg" placeholder="0,00" autoFocus />
+                        <button onClick={()=>conf()} className="btn-secondary text-xs py-1 px-2">OK</button>
+                        <button onClick={()=>setEditDia(null)} className="btn-secondary text-xs py-1 px-2">Pronto</button>
+                      </div>
+                    ) : !hd.tem ? (
                       <div className="flex gap-2 mt-3">
                         <button onClick={e=>{e.stopPropagation();abrirDia(semIdx,diaAtual.dia);}} className="btn-primary text-xs py-2">+ Inserir</button>
                         <button onClick={e=>{e.stopPropagation();naoOperei(semIdx,diaAtual.dia);}} className="btn-danger text-xs py-2" style={{flex:0.6}}>🚫 Não operei</button>
                       </div>
+                    ) : (
+                      <button onClick={e=>{e.stopPropagation();proximoDia();}} className="btn-secondary mt-3 text-xs py-2 w-full">
+                        {diaAtual.dia>=D5-1?"Próxima semana →":"Próximo dia →"}
+                      </button>
                     )}
                   </div>
                 </div>
@@ -591,78 +789,70 @@ function App() {
               {semIdx===(hj?hj.semana:-1) && hj && (()=>{
                 const perdidos = sm.dias.filter((d,i)=>!d.tem && i<hj.dia);
                 if(perdidos.length>0) return (
-                  <div className="alerta mb-3"><span>⚠️</span><span><strong>{perdidos.length} dia(s)</strong> sem registro. Marque <strong>"Não operei"</strong>.</span></div>
-                );
-                const todosOk = sm.dias.filter((d,i)=>i<hj.dia).every(d=>d.tem);
-                if(todosOk && sm.dias.some(d=>d.tem)) return (
-                  <div className="alerta sucesso mb-3"><span>✅</span><span>Todos os dias registrados!</span></div>
+                  <div className="alerta mb-3"><span>⚠️</span><span><strong>{perdidos.length} dia(s)</strong> sem registro.</span></div>
                 );
                 return null;
               })()}
 
               <div className="card mb-4">
-                <div className="space-y-2 mb-3 pb-3 border-b border-[#1e3228]">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-[#6a7d6a]">💵 Banca inicial</span>
-                    <span className="font-mono text-sm font-bold">{fmt(bancaIni)}</span>
+                <div className="grid grid-cols-3 gap-2 mb-3 pb-3 border-b border-[#1e3228]">
+                  <div className="text-center">
+                    <div className="text-[9px] text-[#6a7d6a] font-mono uppercase">Banca</div>
+                    <div className="font-mono text-sm font-bold">{fmt(bancaAtu)}</div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-[#6a7d6a]">💰 Banca atual</span>
-                    <span className="font-mono text-sm font-bold">{fmt(bancaAtu)}</span>
+                  <div className="text-center">
+                    <div className="text-[9px] text-[#6a7d6a] font-mono uppercase">Lucro</div>
+                    <div className={`font-mono text-sm font-bold ${lucro>=0?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{lucro>=0?"+":""}{fmt(lucro)}</div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-[#6a7d6a]">🎯 Projeção</span>
-                    <span className="font-mono text-sm text-[#6a7d6a]">{fmt(bancaEsp)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-[#6a7d6a]">📊 Diferença</span>
-                    <span className={`font-mono text-sm font-bold ${diff>=0?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{diff>=0?"+":""}{fmt(diff)}</span>
+                  <div className="text-center">
+                    <div className="text-[9px] text-[#6a7d6a] font-mono uppercase">Diferença</div>
+                    <div className={`font-mono text-sm font-bold ${diff>=0?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{diff>=0?"+":""}{fmt(diff)}</div>
                   </div>
                 </div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-[10px] text-[#6a7d6a]">💸 Saque (30%)</span>
-                  <span className="font-mono text-xs text-[#c6a15b]">{fmt(saque)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] text-[#6a7d6a]">📈 Lucro da semana</span>
-                  <span className={`font-mono text-xs font-bold ${lucro>=0?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{lucro>=0?"+":""}{fmt(lucro)}</span>
+                {(()=>{
+                  const hjSem = hj && hj.semana===semIdx ? hj : null;
+                  const diasPassados = hjSem ? hjSem.dia : sm.dias.length;
+                  const metaTotal = sm.dias.reduce((s,d,i)=>(smProj?.dias[i]?.meta||0)+s, 0);
+                  const realTotal = sm.dias.reduce((s,d,i)=>i<diasPassados?s+(d.tem?d.soma:0):s, 0);
+                  const restante = metaTotal - realTotal;
+                  const folga = realTotal - sm.dias.reduce((s,d,i)=>i<diasPassados?s+(smProj?.dias[i]?.meta||0):s, 0);
+                  const diasRest = sm.dias.length - diasPassados;
+                  return (
+                  <div className="flex justify-between items-center px-2 mb-3 text-[10px] font-mono">
+                    <span className="text-[#6a7d6a]">📈 Folga</span>
+                    <span className={folga>=0?"text-[#4C8C5C] font-bold":"text-[#A6432D] font-bold"}>{folga>=0?"+":""}{fmt(folga)}</span>
+                    {diasRest>0 && <span className="text-[#6a7d6a]">· Meta restante <span className={restante<=0?"text-[#4C8C5C]":"text-[#c6a15b]"}>{fmt(Math.max(0,restante))}</span></span>}
+                  </div>
+                  );
+                })()}
+                <div className="text-center">
+                  <div className="text-[10px] text-[#6a7d6a] font-mono uppercase mb-1">💸 Saque (30%)</div>
+                  <div className="font-mono text-3xl font-bold text-[#c6a15b]">{fmt(saque)}</div>
                 </div>
               </div>
 
               <div className="card mb-3">
-                <div className="font-mono text-[10px] text-[#6a7d6a] uppercase tracking-wider mb-2">📅 Dias</div>
-                <div className="table-header">
-                  <span>Dia</span><span>Meta</span><span>Resultado</span><span style={{textAlign:"center"}}>Status</span>
+                <div className="font-mono text-[10px] text-[#6a7d6a] uppercase tracking-wider mb-2">📅 Dias · Espelho</div>
+                <div className="s-table-header" style={{gridTemplateColumns:"50px 1fr 1fr 50px"}}>
+                  <span>Dia</span><span>Meta Efec.</span><span>Resultado</span><span></span>
                 </div>
-                {sm.dias.map((d,i)=> {
-                  const st=stts(d,i);
-                  const editando=editDia!==null&&editDia.semana===semIdx&&editDia.dia===i;
+                {smInt.dias.map((d,i)=> {
+                  const projDia = smProj?.dias[i];
+                  const metaMod = projDia ? projDia.meta : 0;
                   const hojeFlag=diaAtual && semIdx===diaAtual.semana && i===diaAtual.dia;
                   const passadoFlag=hj && semIdx===hj.semana && i<hj.dia;
+                  const fechou = diaFechado(semIdx, i);
                   return (
-                    <div key={i} className={`table-row ${hojeFlag?"hoje":""} ${passadoFlag && !d.tem?"passou":""}`} onClick={()=>{if(!editando)abrirDia(semIdx,i);}}>
-                      <span className="font-mono text-xs text-[#6a7d6a]">{d.label}<span className="text-[#5a4a3a] ml-0.5">{d.date.getDate()}</span></span>
-                      <span className="font-mono text-xs text-[#c6a15b]">{fmt(d.metaAjustada)}</span>
-                      <div>
-                        {editando ? (
-                          <input ref={ref} type="text" inputMode="decimal" value={editVal}
-                            onChange={e=>setEditVal(e.target.value)}
-                            onBlur={()=>{if(editVal)conf();else setEditDia(null);}}
-                            onKeyDown={e=>{if(e.key==="Enter")conf();if(e.key==="Escape")setEditDia(null);}}
-                            className="cell-input" placeholder="0,00" />
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <span className={`font-mono text-sm font-bold ${d.tem?"text-[#e8e0cc]":"text-[#4a5a4a]"}`}>{d.tem?fmt(d.soma):"—"}</span>
-                            {d.tem && !editando && (
-                              <button onClick={e=>{e.stopPropagation();if(confirm("Apagar esse lançamento?"))desfazer(semIdx,i);}} className="text-[8px] text-[#4a5a4a] hover:text-[#8a5a4a]" style={{background:"none",border:"none",cursor:"pointer"}}>✕</button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{textAlign:"center"}}>
-                        <span style={{fontSize:"14px"}}>{st.emoji}</span>
-                        <div className="font-mono text-[8px] mt-0.5" style={{color:st.cor}}>{st.label}</div>
-                      </div>
+                    <div key={i} className={`s-table-row ${hojeFlag?"hoje":""} ${passadoFlag && !d.tem?"passou":""}`} onClick={()=>{setSelDia(i);setModo("dia");}} style={{borderLeft:`2px solid ${d.cor}`}}>
+                      <span className="font-mono text-[10px] text-[#6a7d6a]">
+                        {d.label}<span className="text-[#5a4a3a] ml-0.5">{d.date.getDate()}</span>
+                        {fechou && <span className="text-[#f59e0b] ml-0.5">🔒</span>}
+                      </span>
+                      <span className="font-mono text-[11px]" style={{color:d.metaEfetiva<metaMod?"#3b82f6":"#c6a15b"}}>{fmt(d.metaEfetiva)}</span>
+                      <span className="font-mono text-[11px] font-bold" style={{color:d.cor}}>{d.tem?(d.soma===0?"—":fmt(d.soma)):d.status==="coberto"?"—":d.status==="pendente"?"⏳":"—"}</span>
+                      <span className="font-mono text-[8px]" style={{color:d.cor}}>
+                        {d.status==="atingiu"?"✅":d.status==="coberto"?"🔵":d.status==="negativo"?"🔴":d.status==="parcial"?"🟡":d.status==="pendente"?"⏳":""}
+                      </span>
                     </div>
                   );
                 })}
@@ -670,12 +860,12 @@ function App() {
 
               <div className="flex flex-col gap-2 mb-5">
                 <div className="flex gap-2">
-                  <button onClick={()=>{const d=diaAtual?diaAtual.dia:0;abrirDia(semIdx,d);}} className="btn-primary flex-1">+ Inserir resultado</button>
+                  <button onClick={()=>{const d=diaAtual?diaAtual.dia:0;abrirDia(semIdx,d);}} className="btn-primary flex-1">+ Inserir</button>
                   <button onClick={()=>{const d=diaAtual?diaAtual.dia:0;naoOperei(semIdx,d);}} className="btn-danger" style={{flex:0.6}}>🚫 Não operei</button>
                 </div>
                 <button onClick={()=>{
-                  if(confirm("Resetar todos os dados?")){setCap(200);setInpCap("200");const h=new Date();h.setHours(0,0,0);setDataIni(h);setEnt({});setSemAtual(null);setFocoDia(null);
-                    try{["bc:cap","bc:ini","bc:ent"].forEach(k=>localStorage.removeItem(k));}catch(e){}
+                  if(confirm("Resetar todos os dados?")){setCap(200);setInpCap("200");const h=new Date();h.setHours(0,0,0);setDataIni(h);setEnt({});setFechados({});setSenhaAdmin("");setHistorico([]);setSemAtual(null);setFocoDia(null);
+                    try{["bc:cap","bc:ini","bc:ent","bc:fech","bc:senha","bc:hist"].forEach(k=>localStorage.removeItem(k));}catch(e){}
                     if(user) db.collection("dados").doc(user.uid).delete().catch(()=>{});}
                 }} className="btn-secondary w-full">Resetar dados</button>
               </div>
@@ -750,12 +940,260 @@ function App() {
               </>
             );
           })()}
+
+          {modo==="espelho" && (()=>{
+            const rows=[];
+            for(let w=0;w<semanas.length;w++) {
+              for(let d=0;d<semanas[w].dias.length;d++) {
+                const real=semanas[w].dias[d], proj=semanasProj[w]?.dias[d], realProj=semanasReal[w]?.dias[d];
+                const intel=semanasInt[w]?.dias[d];
+                if(!real||!proj||!realProj||!intel) continue;
+                rows.push({date:real.date,label:real.label,semana:w+1,bancaModelo:proj.base,metaModelo:proj.meta,metaReal:real.soma,metaEfetiva:intel.metaEfetiva,status:intel.status,cor:intel.cor,saldo:intel.saldo,bancaRealProj:realProj.base,tipo:"dia"});
+              }
+              if(w<semanas.length-1) {
+                rows.push({tipo:"saque",semana:w+1,saque:semanas[w].saque,fim:semanas[w].fim,prox:semanas[w].prox});
+                rows.push({tipo:"sep",semana:w+2});
+              }
+            }
+            return (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-mono text-[10px] text-[#6a7d6a] uppercase tracking-wider">📋 Espelho</span>
+                  <div className="flex gap-2">
+                    <span className="font-mono text-[8px] text-[#22c55e]">●Atingiu</span>
+                    <span className="font-mono text-[8px] text-[#3b82f6]">●Coberto</span>
+                    <span className="font-mono text-[8px] text-[#f59e0b]">●Parcial</span>
+                    <span className="font-mono text-[8px] text-[#ef4444]">●Negativo</span>
+                  </div>
+                </div>
+                <div className="card" style={{maxHeight:420,overflowY:"auto",padding:0}}>
+                  <div className="esp-header" style={{gridTemplateColumns:"55px 1fr 1fr 1fr"}}><span>Data</span><span>Meta Efec.</span><span>Resultado</span><span>Saldo</span></div>
+                  {rows.map((r,i)=>{
+                    if(r.tipo==="saque") return (
+                      <div key={i} className="esp-row" style={{background:"#0f1f17",borderBottom:"1px solid #1e3228",gridTemplateColumns:"55px 1fr 1fr 1fr"}}>
+                        <span className="font-mono text-[8px] text-[#6a7d6a]">💸</span>
+                        <span className="font-mono text-[10px] text-[#c6a15b]">{fmt(r.fim)}</span>
+                        <span className="font-mono text-[9px] text-[#A6432D]">−{fmt(r.saque)}</span>
+                        <span className="font-mono text-[10px] text-[#4C8C5C]">→ {fmt(r.prox)}</span>
+                      </div>
+                    );
+                    if(r.tipo==="sep") return (
+                      <div key={i} className="esp-sem" style={{padding:"8px 8px 4px"}}>Semana {r.semana}</div>
+                    );
+                    const hoje=new Date(); hoje.setHours(0,0,0,0);
+                    const futuro=r.date>hoje;
+                    const fechou = (()=>{ try { return !!fechados[kw(r.semana-1, rows.filter(x=>x.tipo==="dia").indexOf(r)%D5)]; } catch(e){ return false; } })();
+                    return (
+                      <div key={i} className="esp-row" style={{opacity:futuro?0.35:1, borderLeft:`2px solid ${r.cor}`}}>
+                        <span className="font-mono text-[9px] text-[#6a7d6a]">
+                          {fd(r.date)}{fechou?" 🔒":""}
+                        </span>
+                        <span className="font-mono text-[11px]" style={{color:r.metaEfetiva<r.metaModelo?"#3b82f6":"#c6a15b"}}>{fmt(r.metaEfetiva)}</span>
+                        {futuro ? (
+                          <span className="font-mono text-[10px] text-[#4a5a4a]">—</span>
+                        ) : (
+                          <span className="font-mono text-[11px] font-bold" style={{color:r.cor}}>{r.metaReal===0?"—":fmt(r.metaReal)}</span>
+                        )}
+                        <span className={`font-mono text-[10px] ${r.saldo>=0?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{fmt(r.saldo)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
+
+          {modo==="painel" && (()=>{
+            const d=dashData;
+            const diasRest=TOTAL_DIAS - d.diasOperados;
+            const lucroTotalReal=semanas.reduce((s,w)=>s+w.lucro,0);
+            const saldoCalc = sm ? sm.prox : cap;
+            const saldoReal = smInt && smInt.dias.length > 0 ? smInt.dias[smInt.dias.length-1].base : cap;
+            return (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-mono text-[10px] text-[#6a7d6a] uppercase tracking-wider">📊 Painel</span>
+                  <span className="font-mono text-[8px] text-[#4a5a4a]">v6.0</span>
+                </div>
+
+                <div className="card mb-3">
+                  <div className="text-center mb-3 pb-3 border-b border-[#1e3228]">
+                    <div className="text-[9px] text-[#6a7d6a] font-mono uppercase mb-1">Banca Atual</div>
+                    <div className="font-mono text-2xl font-bold text-[#e8e0cc]">{fmt(d.bancaFinal)}</div>
+                    <div className="font-mono text-[10px] text-[#6a7d6a]">Projeção: {fmt(d.bancaProj)}</div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mb-3 pb-3 border-b border-[#1e3228]">
+                    <div className="text-center">
+                      <div className="text-[8px] text-[#6a7d6a] font-mono uppercase">Lucro</div>
+                      <div className={`font-mono text-sm font-bold ${d.totalLucro>=0?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{d.totalLucro>=0?"+":""}{fmt(d.totalLucro)}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-[8px] text-[#6a7d6a] font-mono uppercase">Saque</div>
+                      <div className="font-mono text-sm font-bold text-[#c6a15b]">{fmt(d.totalSaque)}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-[8px] text-[#6a7d6a] font-mono uppercase">Diferença</div>
+                      <div className={`font-mono text-sm font-bold ${d.diff>=0?"text-[#4C8C5C]":"text-[#A6432D]"}`}>{d.diff>=0?"+":""}{fmt(d.diff)}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-mono text-[10px] text-[#6a7d6a]">📅 Dias operados</span>
+                      <span className="font-mono text-[11px] font-bold">{d.diasOperados}<span className="text-[#4a5a4a]">/{TOTAL_DIAS}</span></span>
+                    </div>
+                    <div className="bar-container mb-1">
+                      <div className="bar-fill" style={{width:`${(d.diasOperados/TOTAL_DIAS)*100}%`,background:"#c6a15b"}}></div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="font-mono text-[10px] text-[#6a7d6a]">🎯 Win rate</span>
+                      <span className={`font-mono text-[11px] font-bold ${d.winRate>=60?"text-[#4C8C5C]":d.winRate>=40?"text-[#c6a15b]":"text-[#A6432D]"}`}>{d.winRate}%</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="font-mono text-[10px] text-[#6a7d6a]">🔥 Melhor sequência</span>
+                      <span className="font-mono text-[11px] font-bold text-[#4C8C5C]">{d.seqAtual} dias</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card mb-3">
+                  <div className="font-mono text-[10px] text-[#6a7d6a] uppercase tracking-wider mb-2">🏆 Recordes</div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-mono text-[10px] text-[#4C8C5C]">Melhor dia</div>
+                        <div className="font-mono text-[8px] text-[#4a5a4a]">{d.melhorDia.data ? fd(d.melhorDia.data) : "—"}</div>
+                      </div>
+                      <span className="font-mono text-[11px] font-bold text-[#4C8C5C]">+{fmt(d.melhorDia.soma)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-mono text-[10px] text-[#A6432D]">Pior dia</div>
+                        <div className="font-mono text-[8px] text-[#4a5a4a]">{d.piorDia.data && d.piorDia.soma<0 ? fd(d.piorDia.data) : "—"}</div>
+                      </div>
+                      <span className="font-mono text-[11px] font-bold text-[#A6432D]">{d.piorDia.soma<0?fmt(d.piorDia.soma):"—"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card mb-3">
+                  <div className="font-mono text-[10px] text-[#6a7d6a] uppercase tracking-wider mb-2">🔒 Verificação de Banca</div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-mono text-[10px] text-[#6a7d6a]">Saldo calculado</span>
+                      <span className="font-mono text-[11px] font-bold">{fmt(saldoCalc)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="font-mono text-[10px] text-[#6a7d6a]">Saldo real</span>
+                      <span className="font-mono text-[11px] font-bold">{fmt(saldoReal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-[#1e3228] pt-2">
+                      <span className="font-mono text-[10px] text-[#6a7d6a]">Diferença</span>
+                      <span className={`font-mono text-[11px] font-bold ${Math.abs(saldoCalc-saldoReal)<0.01?"text-[#4C8C5C]":"text-[#A6432D]"}`}>
+                        {Math.abs(saldoCalc-saldoReal)<0.01?"✅ OK":fmt(saldoCalc-saldoReal)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card mb-3">
+                  <div className="font-mono text-[10px] text-[#6a7d6a] uppercase tracking-wider mb-2">⚙️ Senha Admin</div>
+                  <div className="flex gap-2">
+                    <input type="password" placeholder={senhaAdmin?"••••••":"Definir senha"} value={inpSenha}
+                      onChange={e=>setInpSenha(e.target.value)}
+                      className="flex-1 font-mono text-xs text-[#e8e0cc] bg-[#0a1410] border border-[#1e3228] rounded px-2 py-1.5 outline-none focus:border-[#c6a15b]" />
+                    <button onClick={()=>{
+                      if(!inpSenha){setSenhaAdmin("");setHistorico(p=>[...p,{tipo:"senha",data:Date.now()}]);return;}
+                      setSenhaAdmin(inpSenha); setInpSenha("");
+                      setHistorico(p=>[...p,{tipo:"senha",data:Date.now()}]);
+                    }} className="btn-secondary py-1 px-3 text-[10px]">{senhaAdmin?"Alterar":"Salvar"}</button>
+                    {senhaAdmin && <button onClick={()=>{setSenhaAdmin("");setInpSenha("");setHistorico(p=>[...p,{tipo:"remover_senha",data:Date.now()}]);}} className="btn-small text-[9px]">✕</button>}
+                  </div>
+                  {senhaAdmin && <div className="font-mono text-[8px] text-[#4C8C5C] mt-1">Senha ativa — dias fechados bloqueados</div>}
+                </div>
+
+                <div className="card mb-3">
+                  <button onClick={()=>{
+                    const lines=[["Data","Hora","Tipo","Detalhe"]];
+                    historico.forEach(h=>{
+                      const d=new Date(h.data);
+                      const data=fd(d);
+                      const hora=`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+                      let tipo=h.tipo;
+                      let det=h.k||"";
+                      if(h.tipo==="entrada") det+=` slot ${h.slot} = ${h.val}`;
+                      lines.push([data,hora,tipo,det]);
+                    });
+                    const csv=lines.map(l=>l.join(";")).join("\n");
+                    const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+                    const url=URL.createObjectURL(blob);
+                    const a=document.createElement("a"); a.href=url; a.download=`gestor_historico_${tISO(new Date())}.csv`; a.click();
+                    URL.revokeObjectURL(url);
+                  }} className="btn-secondary w-full text-[10px] py-2">
+                    📥 Exportar histórico (CSV)
+                  </button>
+                </div>
+
+                {historico.length > 0 && (
+                  <div className="card mb-3">
+                    <div className="font-mono text-[10px] text-[#6a7d6a] uppercase tracking-wider mb-2">📋 Histórico ({historico.length})</div>
+                    <div style={{maxHeight:200,overflowY:"auto"}}>
+                      {historico.slice().reverse().slice(0,50).map((h,i)=>{
+                        const d=new Date(h.data);
+                        const cor = h.tipo==="fechar"?"#f59e0b":h.tipo==="desfechar"?"#3b82f6":h.tipo==="entrada"?"#22c55e":h.tipo==="limpar"?"#ef4444":"#6a7d6a";
+                        return (
+                          <div key={i} className="flex justify-between items-center py-1 border-b border-[#14241c] last:border-0">
+                            <div className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full" style={{background:cor}}></span>
+                              <span className="font-mono text-[9px] text-[#6a7d6a]">{fd(d)}</span>
+                            </div>
+                            <span className="font-mono text-[9px]" style={{color:cor}}>
+                              {h.tipo==="fechar"?"🔒 Fechou":h.tipo==="desfechar"?"🔓 Abriu":h.tipo==="entrada"?"✏️ "+h.val:h.tipo==="limpar"?"🗑️ Limpo":h.tipo==="naoOperei"?"🚫 Não operei":h.tipo==="senha"?"🔑 Senha alterada":h.tipo}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2 mb-5">
+                  <button onClick={()=>{
+                    if(confirm("Resetar TODOS os dados?")){setCap(200);setInpCap("200");const h=new Date();h.setHours(0,0,0);setDataIni(h);setEnt({});setFechados({});setSenhaAdmin("");setHistorico([]);setSemAtual(null);setFocoDia(null);
+                      try{["bc:cap","bc:ini","bc:ent","bc:fech","bc:senha","bc:hist"].forEach(k=>localStorage.removeItem(k));}catch(e){}
+                      if(user) db.collection("dados").doc(user.uid).delete().catch(()=>{});}
+                  }} className="btn-danger w-full text-[11px]">🗑️ Resetar tudo</button>
+                </div>
+              </>
+            );
+          })()}
         </>
       )}
 
       <div className="flex justify-center mt-4">
         <span className="font-mono text-[8px] text-[#4a5a4a]">{TIERS.map(t=>`${Math.round(t.taxa*100)}%`).join(" → ")} ao dia · saque 30%</span>
       </div>
+
+      {showModalSenha && (
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}>
+          <div className="card" style={{maxWidth:300,width:"90%",padding:20}}>
+            <div className="text-center mb-3">
+              <span style={{fontSize:24}}>🔒</span>
+              <div className="font-mono text-sm text-[#e8e0cc] mt-2 font-bold">Dia fechado</div>
+              <div className="font-mono text-[10px] text-[#6a7d6a] mt-1">Digite a senha admin para editar</div>
+            </div>
+            {senhaErro && <div className="alerta mb-2"><span className="text-xs">{senhaErro}</span></div>}
+            <input type="password" placeholder="Senha" value={inpSenha}
+              onChange={e=>{setInpSenha(e.target.value);setSenhaErro("");}}
+              onKeyDown={e=>{if(e.key==="Enter")confirmarSenha();if(e.key==="Escape")setShowModalSenha(false);}}
+              className="w-full font-mono text-sm text-[#e8e0cc] bg-[#0a1410] border border-[#1e3228] rounded px-3 py-2 outline-none focus:border-[#c6a15b] mb-3" autoFocus />
+            <div className="flex gap-2">
+              <button onClick={()=>setShowModalSenha(false)} className="btn-secondary flex-1 py-2">Cancelar</button>
+              <button onClick={confirmarSenha} className="btn-primary py-2" style={{flex:1.5}}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -787,7 +1225,7 @@ catch(e) { document.getElementById("root").innerHTML=`<div style="color:#e8e0cc;
 <script>
   if('serviceWorker' in navigator) {
     window.addEventListener('load', ()=>{
-      navigator.serviceWorker.register('service-worker.js?v=4').then(reg=>{
+      navigator.serviceWorker.register('service-worker.js?v=5').then(reg=>{
         reg.addEventListener('updatefound', ()=>{
           const novo = reg.installing;
           if(!novo) return;
